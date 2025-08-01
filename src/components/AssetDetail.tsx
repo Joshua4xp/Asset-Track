@@ -1,130 +1,260 @@
-import React, { useState, useRef } from "react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import React, { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import {
+  ArrowLeft,
+  Calendar,
+  MapPin,
+  Settings,
+  Wrench,
+  FileText,
+  Package,
+  QrCode,
+  CheckCircle,
+  AlertCircle,
+  Plus,
+} from "lucide-react";
+import { Button } from "./ui/button";
 import {
   Card,
+  CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
-  CardContent,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+} from "./ui/card";
+import { Badge } from "./ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { supabase } from "@/lib/supabase";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Calendar,
-  Clock,
-  FileText,
-  Image,
-  Wrench,
-  History,
-  Edit,
-  Trash2,
-  ArrowLeft,
-  Plus,
-  X,
-  Camera,
-  Check,
-} from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
-import MaintenanceTaskList from "./MaintenanceTaskList";
-import ServiceLogForm from "./ServiceLogForm";
-
-interface AssetPhoto {
-  id: string;
-  url: string;
-  description?: string;
-  uploadedAt: string;
-}
+  Asset,
+  Project,
+  ServiceRecord,
+  MaintenanceTask,
+  Repair,
+  AssetFile,
+} from "@/types/supabase";
 
 interface AssetDetailProps {
-  asset?: {
-    id: string;
-    name: string;
-    type: string;
-    model: string;
-    serialNumber: string;
-    installDate: string;
-    location: string;
-    status: "operational" | "maintenance" | "offline";
-    lastServiced?: string;
-    nextServiceDue?: string;
-    image?: string;
-    photos?: AssetPhoto[];
-  };
+  id?: string;
+  asset?: AssetWithRelations;
+  onBack?: () => void;
 }
 
-const AssetDetail = ({ asset: propAsset }: AssetDetailProps) => {
-  const navigate = useNavigate();
-  const { id } = useParams();
-  const [activeTab, setActiveTab] = useState("info");
-  const [showServiceForm, setShowServiceForm] = useState(false);
-  const [photos, setPhotos] = useState<AssetPhoto[]>([]);
-  const [showAddPhotoDialog, setShowAddPhotoDialog] = useState(false);
-  const [newPhotoUrl, setNewPhotoUrl] = useState("");
-  const [newPhotoDescription, setNewPhotoDescription] = useState("");
-  const [photoUploadMessage, setPhotoUploadMessage] = useState("");
-  const [showCameraDialog, setShowCameraDialog] = useState(false);
-  const [capturedPhotos, setCapturedPhotos] = useState<AssetPhoto[]>([]);
-  const [mainImageId, setMainImageId] = useState<string | null>(null);
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+interface AssetWithRelations extends Asset {
+  project?: Project;
+  asset_type?: any; // Add asset type data
+  service_records?: ServiceRecord[];
+  maintenance_tasks?: MaintenanceTask[];
+  repairs?: Repair[];
+  asset_files?: AssetFile[];
+}
 
-  // Use prop asset or create mock data based on URL param
-  const asset = propAsset || {
-    id: id || "asset-123",
-    name: `Asset ${id || "123"}`,
-    type: "HVAC System",
-    model: "Carrier Infinity 24VNA9",
-    serialNumber: `CAR-2023-${Math.floor(Math.random() * 10000)}`,
-    installDate: "2023-05-15",
-    location: "Building A - Roof",
-    status: "operational" as const,
-    lastServiced: "2023-11-10",
-    nextServiceDue: "2024-05-10",
-    image:
-      "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=600&q=80",
-    photos: [
-      {
-        id: "photo-1",
-        url: "https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=400&q=80",
-        description: "Installation view",
-        uploadedAt: "2023-11-15T10:30:00Z",
-      },
-      {
-        id: "photo-2",
-        url: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=80",
-        description: "Control panel",
-        uploadedAt: "2023-11-10T14:20:00Z",
-      },
-    ],
+export default function AssetDetail({ id, asset, onBack }: AssetDetailProps) {
+  const params = useParams();
+  const navigate = useNavigate();
+  const [assetData, setAssetData] = useState<AssetWithRelations | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Get asset ID from props or URL params
+  const assetId = id || params.id;
+
+  useEffect(() => {
+    if (asset) {
+      setAssetData(asset);
+      setLoading(false);
+    } else if (assetId) {
+      fetchAssetData(assetId);
+    } else {
+      setError("No asset ID provided");
+      setLoading(false);
+    }
+  }, [assetId, asset]);
+
+  const fetchAssetData = async (assetId: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log("Fetching asset data for ID:", assetId);
+
+      // First, try to get asset by QR code
+      const { data: qrData, error: qrError } = await supabase
+        .from("qr_codes")
+        .select("assigned_asset_id")
+        .eq("id", assetId)
+        .single();
+
+      console.log("QR lookup result:", { qrData, qrError });
+
+      let actualAssetId = assetId;
+      if (qrData?.assigned_asset_id) {
+        actualAssetId = qrData.assigned_asset_id;
+        console.log("Using assigned asset ID:", actualAssetId);
+      } else {
+        console.log(
+          "No QR assignment found, trying direct asset lookup with ID:",
+          assetId,
+        );
+      }
+
+      // Fetch asset data first
+      const { data: assetData, error: assetError } = await supabase
+        .from("assets")
+        .select("*")
+        .eq("id", actualAssetId)
+        .single();
+
+      console.log("Asset fetch result:", { assetData, assetError });
+
+      if (assetError) {
+        console.error("Asset fetch error:", assetError);
+        setError("Error fetching asset data: " + assetError.message);
+        return;
+      }
+
+      console.log("Successfully fetched asset:", assetData);
+
+      // Get asset type information from default_asset_types table, with fallback to user_asset_types
+      let assetTypeData = null;
+      if (assetData.asset_type_id) {
+        // First try default_asset_types
+        const { data: defaultTypeData, error: defaultTypeError } =
+          await supabase
+            .from("default_asset_types")
+            .select("*")
+            .eq("id", assetData.asset_type_id)
+            .single();
+
+        if (!defaultTypeError && defaultTypeData) {
+          assetTypeData = defaultTypeData;
+          console.log(
+            "Asset type data from default_asset_types:",
+            assetTypeData,
+          );
+        } else {
+          // Fallback to user_asset_types if not found in default or if cost data is missing
+          console.log("Falling back to user_asset_types table");
+          const { data: userTypeData, error: userTypeError } = await supabase
+            .from("user_asset_types")
+            .select("*")
+            .eq("id", assetData.asset_type_id)
+            .single();
+
+          if (!userTypeError && userTypeData) {
+            assetTypeData = userTypeData;
+            console.log(
+              "Asset type data from user_asset_types:",
+              assetTypeData,
+            );
+          } else {
+            console.log("Asset type not found in either table");
+          }
+        }
+      }
+
+      // Get project information through annotations if asset has annotation_id
+      let projectData = null;
+      if (assetData.annotation_id) {
+        const { data: annotationData, error: annotationError } = await supabase
+          .from("annotations")
+          .select(
+            `
+            id,
+            project_id,
+            projects (
+              id,
+              title,
+              description,
+              location,
+              status,
+              created_at,
+              updated_at
+            )
+          `,
+          )
+          .eq("id", assetData.annotation_id)
+          .single();
+
+        if (!annotationError && annotationData?.projects) {
+          projectData = {
+            ...annotationData.projects,
+            name: annotationData.projects.title, // Map title to name for compatibility
+          };
+        }
+      }
+
+      // Fetch related data separately
+      const [serviceRecords, maintenanceTasks, repairs, assetFiles] =
+        await Promise.all([
+          supabase
+            .from("service_records")
+            .select("*")
+            .eq("asset_id", actualAssetId),
+          supabase
+            .from("maintenance_tasks")
+            .select("*")
+            .eq("asset_id", actualAssetId),
+          supabase.from("repairs").select("*").eq("asset_id", actualAssetId),
+          supabase
+            .from("asset_files")
+            .select("*")
+            .eq("asset_id", actualAssetId),
+        ]);
+
+      console.log("Related data:", {
+        serviceRecords: serviceRecords.data?.length || 0,
+        maintenanceTasks: maintenanceTasks.data?.length || 0,
+        repairs: repairs.data?.length || 0,
+        assetFiles: assetFiles.data?.length || 0,
+      });
+
+      // Combine all data
+      const combinedAssetData: AssetWithRelations = {
+        ...assetData,
+        project: projectData,
+        asset_type: assetTypeData, // Add asset type data
+        service_records: serviceRecords.data || [],
+        maintenance_tasks: maintenanceTasks.data || [],
+        repairs: repairs.data || [],
+        asset_files: assetFiles.data || [],
+      };
+
+      setAssetData(combinedAssetData);
+    } catch (err) {
+      console.error("Error fetching asset:", err);
+      setError("Failed to fetch asset data: " + (err as Error).message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Initialize photos from asset data
-  React.useEffect(() => {
-    if (asset.photos) {
-      setPhotos(asset.photos);
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else {
+      // Navigate to current assets page with project filter if asset has a project
+      if (assetData?.project?.id) {
+        navigate("/", {
+          state: {
+            selectedProjectId: assetData.project.id,
+            activeTab: "assets",
+          },
+        });
+      } else {
+        navigate("/", { state: { activeTab: "assets" } });
+      }
     }
-  }, [asset.photos]);
+  };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    switch (status?.toLowerCase()) {
+      case "good":
       case "operational":
         return "bg-green-100 text-green-800";
+      case "fair":
       case "maintenance":
         return "bg-yellow-100 text-yellow-800";
+      case "poor":
       case "offline":
         return "bg-red-100 text-red-800";
       default:
@@ -132,658 +262,579 @@ const AssetDetail = ({ asset: propAsset }: AssetDetailProps) => {
     }
   };
 
-  const handleAddPhoto = () => {
-    if (!newPhotoUrl.trim()) {
-      setPhotoUploadMessage("Please enter a photo URL");
-      return;
-    }
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading asset details...</p>
+        </div>
+      </div>
+    );
+  }
 
-    const newPhoto: AssetPhoto = {
-      id: `photo-${Date.now()}`,
-      url: newPhotoUrl,
-      description: newPhotoDescription,
-      uploadedAt: new Date().toISOString(),
-    };
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-6">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            Error Loading Asset
+          </h1>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Button onClick={handleBack}>Try Again</Button>
+        </div>
+      </div>
+    );
+  }
 
-    setPhotos([...photos, newPhoto]);
-    setNewPhotoUrl("");
-    setNewPhotoDescription("");
-    setShowAddPhotoDialog(false);
-    setPhotoUploadMessage("Photo added successfully!");
-
-    // Clear success message after 3 seconds
-    setTimeout(() => setPhotoUploadMessage(""), 3000);
-  };
-
-  const handleRemovePhoto = (photoId: string) => {
-    setPhotos(photos.filter((photo) => photo.id !== photoId));
-    setPhotoUploadMessage("Photo removed successfully!");
-    setTimeout(() => setPhotoUploadMessage(""), 3000);
-  };
-
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      });
-      setCameraStream(stream);
-      setShowCameraDialog(true);
-
-      // Wait for dialog to open and video element to be available
-      setTimeout(() => {
-        if (videoRef.current && stream) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(console.error);
-        }
-      }, 100);
-    } catch (error) {
-      console.error("Camera access error:", error);
-      setPhotoUploadMessage(
-        "Unable to access camera. Please check permissions and ensure you're using HTTPS.",
-      );
-      setTimeout(() => setPhotoUploadMessage(""), 5000);
-    }
-  };
-
-  const stopCamera = () => {
-    if (cameraStream) {
-      cameraStream.getTracks().forEach((track) => track.stop());
-      setCameraStream(null);
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setShowCameraDialog(false);
-  };
-
-  const capturePhoto = () => {
-    if (
-      videoRef.current &&
-      canvasRef.current &&
-      videoRef.current.videoWidth > 0
-    ) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const context = canvas.getContext("2d");
-
-      // Set canvas dimensions to match video
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      if (context && canvas.width > 0 && canvas.height > 0) {
-        // Draw the video frame to canvas
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
-
-        const newPhoto: AssetPhoto = {
-          id: `captured-${Date.now()}`,
-          url: dataUrl,
-          description: `Asset photo ${capturedPhotos.length + 1}`,
-          uploadedAt: new Date().toISOString(),
-        };
-
-        const updatedPhotos = [...capturedPhotos, newPhoto];
-        setCapturedPhotos(updatedPhotos);
-
-        // Set first photo as main image if none selected
-        if (!mainImageId && updatedPhotos.length === 1) {
-          setMainImageId(newPhoto.id);
-        }
-
-        setPhotoUploadMessage(
-          `Photo ${updatedPhotos.length} captured successfully!`,
-        );
-        setTimeout(() => setPhotoUploadMessage(""), 3000);
-
-        // Stop camera after 5 photos
-        if (updatedPhotos.length >= 5) {
-          stopCamera();
-          setPhotoUploadMessage(
-            "Maximum 5 photos captured. You can now select your main image.",
-          );
-          setTimeout(() => setPhotoUploadMessage(""), 5000);
-        }
-      } else {
-        setPhotoUploadMessage(
-          "Camera not ready. Please wait a moment and try again.",
-        );
-        setTimeout(() => setPhotoUploadMessage(""), 3000);
-      }
-    } else {
-      setPhotoUploadMessage("Camera not ready. Please wait for video to load.");
-      setTimeout(() => setPhotoUploadMessage(""), 3000);
-    }
-  };
-
-  const selectMainImage = (photoId: string) => {
-    setMainImageId(photoId);
-    setPhotoUploadMessage("Main image updated successfully!");
-    setTimeout(() => setPhotoUploadMessage(""), 3000);
-  };
-
-  const getMainImage = () => {
-    if (mainImageId) {
-      const mainPhoto = capturedPhotos.find(
-        (photo) => photo.id === mainImageId,
-      );
-      if (mainPhoto) return mainPhoto.url;
-    }
-    return asset.image;
-  };
-
-  const getThumbnailPhotos = () => {
-    return capturedPhotos.filter((photo) => photo.id !== mainImageId);
-  };
+  if (!assetData) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600">Asset not found</p>
+          <Button onClick={handleBack} className="mt-4">
+            Go Back
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-background p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-4 mb-6">
-          <Button variant="outline" size="icon" onClick={() => navigate("/")}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold">{asset.name}</h1>
-            <div className="flex items-center mt-1">
-              <Badge variant="outline" className={getStatusColor(asset.status)}>
-                {asset.status.charAt(0).toUpperCase() + asset.status.slice(1)}
-              </Badge>
-              <span className="text-sm text-muted-foreground ml-2">
-                ID: {asset.id}
-              </span>
+            <h1 className="text-3xl font-bold text-gray-900">
+              {assetData.name}
+            </h1>
+            <div className="flex items-center gap-4 mt-2 text-gray-600">
+              <span className="text-sm">Asset ID: {assetData.id}</span>
+              {assetData.project && (
+                <>
+                  <span className="text-gray-400">•</span>
+                  <span className="text-sm">{assetData.project.title}</span>
+                </>
+              )}
+              {assetData.description && (
+                <>
+                  <span className="text-gray-400">•</span>
+                  <span className="text-sm">{assetData.description}</span>
+                </>
+              )}
             </div>
           </div>
-          <div className="ml-auto">
-            <Button variant="outline" className="mr-2">
-              <Edit className="h-4 w-4 mr-2" /> Edit Asset
-            </Button>
-            <Button variant="destructive">
-              <Trash2 className="h-4 w-4 mr-2" /> Delete
-            </Button>
-          </div>
+          <Button variant="outline" onClick={handleBack}>
+            ← Back
+          </Button>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid grid-cols-4 mb-6">
-            <TabsTrigger value="info">Asset Information</TabsTrigger>
-            <TabsTrigger value="photos">Photos</TabsTrigger>
-            <TabsTrigger value="maintenance">Maintenance Tasks</TabsTrigger>
-            <TabsTrigger value="service">Service History</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="info" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Asset Details</CardTitle>
-                  <CardDescription>
-                    Basic information about this asset
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Type
-                      </p>
-                      <p>{asset.type}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Model
-                      </p>
-                      <p>{asset.model}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Serial Number
-                      </p>
-                      <p>{asset.serialNumber}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Location
-                      </p>
-                      <p>{asset.location}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Install Date
-                      </p>
-                      <p>{asset.installDate}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Service Information</CardTitle>
-                  <CardDescription>
-                    Maintenance schedule and status
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Last Serviced
-                    </p>
-                    <div className="flex items-center">
-                      <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-                      <p>{asset.lastServiced || "Not available"}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Next Service Due
-                    </p>
-                    <div className="flex items-center">
-                      <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-                      <p>{asset.nextServiceDue || "Not scheduled"}</p>
-                    </div>
-                  </div>
-                  <Separator />
-                  <div className="pt-2">
-                    <Button variant="outline" className="w-full">
-                      <FileText className="h-4 w-4 mr-2" /> View Documentation
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
+        {/* Asset Overview */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          {/* Asset Information */}
+          <div className="lg:col-span-2">
             <Card>
               <CardHeader>
-                <div className="flex justify-between items-center">
-                  <CardTitle>Asset Image</CardTitle>
-                  <Button
-                    onClick={startCamera}
-                    disabled={capturedPhotos.length >= 5}
-                  >
-                    <Camera className="h-4 w-4 mr-2" />
-                    {capturedPhotos.length === 0
-                      ? "Take Photos"
-                      : `Photos (${capturedPhotos.length}/5)`}
-                  </Button>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="h-5 w-5" />
+                  Asset Information
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">
+                      Quantity
+                    </label>
+                    <p className="mt-1 text-lg font-semibold text-gray-900">
+                      {assetData.quantity || "Not specified"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">
+                      Year Installed
+                    </label>
+                    <p className="mt-1 text-lg font-semibold text-gray-900">
+                      {assetData.year_installed || "Not specified"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">
+                      Current Age
+                    </label>
+                    <p className="mt-1 text-lg font-semibold text-gray-900">
+                      {assetData.year_installed
+                        ? `${new Date().getFullYear() - assetData.year_installed} years`
+                        : "Not specified"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">
+                      Expected Life
+                    </label>
+                    <p className="mt-1 text-lg font-semibold text-gray-900">
+                      {assetData.asset_type?.expected_life
+                        ? `${assetData.asset_type.expected_life} years`
+                        : "15 years"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">
+                      Replacement Year
+                    </label>
+                    <p className="mt-1 text-lg font-semibold text-gray-900">
+                      {assetData.year_installed &&
+                      assetData.asset_type?.expected_life
+                        ? assetData.year_installed +
+                          assetData.asset_type.expected_life
+                        : assetData.year_installed
+                          ? assetData.year_installed + 15
+                          : "Not specified"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">
+                      Years Until Replacement
+                    </label>
+                    <p className="mt-1 text-lg font-semibold text-gray-900">
+                      {assetData.year_installed &&
+                      assetData.asset_type?.expected_life
+                        ? Math.max(
+                            0,
+                            assetData.year_installed +
+                              assetData.asset_type.expected_life -
+                              new Date().getFullYear(),
+                          ) + " years"
+                        : assetData.year_installed
+                          ? Math.max(
+                              0,
+                              assetData.year_installed +
+                                15 -
+                                new Date().getFullYear(),
+                            ) + " years"
+                          : "Not specified"}
+                    </p>
+                  </div>
                 </div>
+
+                {assetData.notes && (
+                  <div className="mt-6">
+                    <label className="text-sm font-medium text-gray-500">
+                      Notes
+                    </label>
+                    <p className="mt-1 text-sm text-gray-900 bg-gray-50 p-3 rounded-md">
+                      {assetData.notes}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Cost Information */}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <span className="text-lg">$</span>
+                  Cost Information
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">
+                      Low Cost Estimate
+                    </label>
+                    <p className="mt-1 text-lg font-semibold text-gray-900">
+                      {assetData.asset_type?.low_cost_estimate
+                        ? `$${assetData.asset_type.low_cost_estimate.toLocaleString()}`
+                        : "Not available"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">
+                      High Cost Estimate
+                    </label>
+                    <p className="mt-1 text-lg font-semibold text-gray-900">
+                      {assetData.asset_type?.high_cost_estimate
+                        ? `$${assetData.asset_type.high_cost_estimate.toLocaleString()}`
+                        : "Not available"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <label className="text-sm font-medium text-gray-500">
+                    Total Replacement Cost
+                  </label>
+                  <p className="mt-1 text-2xl font-bold text-gray-900">
+                    {assetData.asset_type?.high_cost_estimate &&
+                    assetData.quantity
+                      ? `$${(assetData.asset_type.high_cost_estimate * assetData.quantity).toLocaleString()}`
+                      : assetData.asset_type?.high_cost_estimate
+                        ? `$${assetData.asset_type.high_cost_estimate.toLocaleString()}`
+                        : "Not available"}
+                  </p>
+                </div>
+
+                {assetData.asset_type?.replacement_description && (
+                  <div className="mt-6">
+                    <label className="text-sm font-medium text-gray-500">
+                      Replacement Description
+                    </label>
+                    <p className="mt-1 text-sm text-gray-900 bg-gray-50 p-3 rounded-md">
+                      {assetData.asset_type.replacement_description}
+                    </p>
+                  </div>
+                )}
+
+                {assetData.asset_type?.cost_description && (
+                  <div className="mt-4">
+                    <label className="text-sm font-medium text-gray-500">
+                      Cost Description
+                    </label>
+                    <p className="mt-1 text-sm text-gray-900 bg-gray-50 p-3 rounded-md">
+                      {assetData.asset_type.cost_description}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Asset Status & Location */}
+          <div>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5" />
+                  Asset Status
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {/* Main Image */}
-                  <div className="relative h-64 w-full overflow-hidden rounded-md border">
-                    <img
-                      src={getMainImage()}
-                      alt={asset.name}
-                      className="object-cover w-full h-full"
-                    />
-                    {mainImageId && (
-                      <div className="absolute top-2 left-2">
-                        <Badge className="bg-green-100 text-green-800">
-                          <Check className="h-3 w-3 mr-1" /> Main Image
-                        </Badge>
-                      </div>
-                    )}
+                  <div>
+                    <label className="text-sm font-medium text-gray-500">
+                      Lifespan Remaining
+                    </label>
+                    <div className="mt-2">
+                      {assetData.year_installed && (
+                        <>
+                          {(() => {
+                            const expectedLife =
+                              assetData.asset_type?.expected_life || 15;
+                            const yearsLeft = Math.max(
+                              0,
+                              assetData.year_installed +
+                                expectedLife -
+                                new Date().getFullYear(),
+                            );
+                            const percentageLeft = Math.max(
+                              0,
+                              Math.min(100, (yearsLeft / expectedLife) * 100),
+                            );
+
+                            return (
+                              <>
+                                <div className="flex justify-between text-sm mb-1">
+                                  <span>{Math.round(percentageLeft)}%</span>
+                                  <span>{yearsLeft} years left</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div
+                                    className={`h-2 rounded-full ${
+                                      percentageLeft > 50
+                                        ? "bg-green-500"
+                                        : percentageLeft > 25
+                                          ? "bg-yellow-500"
+                                          : "bg-red-500"
+                                    }`}
+                                    style={{ width: `${percentageLeft}%` }}
+                                  ></div>
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Thumbnail Photos */}
-                  {getThumbnailPhotos().length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium mb-2">
-                        Other Photos (click to set as main)
-                      </p>
-                      <div className="grid grid-cols-4 gap-2">
-                        {getThumbnailPhotos().map((photo) => (
-                          <div
-                            key={photo.id}
-                            className="relative aspect-square overflow-hidden rounded border cursor-pointer hover:ring-2 hover:ring-primary transition-all"
-                            onClick={() => selectMainImage(photo.id)}
-                          >
-                            <img
-                              src={photo.url}
-                              alt={photo.description || "Asset photo"}
-                              className="object-cover w-full h-full"
-                            />
-                          </div>
-                        ))}
-
-                        {/* Show main image as thumbnail if it's from captured photos */}
-                        {mainImageId &&
-                          capturedPhotos.find((p) => p.id === mainImageId) && (
-                            <div
-                              className="relative aspect-square overflow-hidden rounded border cursor-pointer hover:ring-2 hover:ring-primary transition-all"
-                              onClick={() => setMainImageId(null)}
-                            >
-                              <img
-                                src={asset.image}
-                                alt="Original asset image"
-                                className="object-cover w-full h-full"
-                              />
-                              <div className="absolute inset-0 bg-black bg-opacity-20 flex items-center justify-center">
-                                <span className="text-white text-xs font-medium">
-                                  Original
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                      </div>
-                    </div>
-                  )}
+                  <div>
+                    <Badge
+                      className={getStatusColor(
+                        assetData.condition || "unknown",
+                      )}
+                    >
+                      {assetData.condition || "Unknown"}
+                    </Badge>
+                  </div>
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
 
-          <TabsContent value="photos">
-            <Card>
+            <Card className="mt-6">
               <CardHeader>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <CardTitle>Asset Photos</CardTitle>
-                    <CardDescription>
-                      Visual documentation and reference images
-                    </CardDescription>
-                  </div>
-                  <Dialog
-                    open={showAddPhotoDialog}
-                    onOpenChange={setShowAddPhotoDialog}
-                  >
-                    <DialogTrigger asChild>
-                      <Button>
-                        <Camera className="h-4 w-4 mr-2" /> Add Photo
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-[425px]">
-                      <DialogHeader>
-                        <DialogTitle>Add New Photo</DialogTitle>
-                        <DialogDescription>
-                          Add a photo to document this asset. You can provide a
-                          URL and optional description.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="grid gap-4 py-4">
-                        <div className="grid gap-2">
-                          <label
-                            htmlFor="photo-url"
-                            className="text-sm font-medium"
-                          >
-                            Photo URL
-                          </label>
-                          <Input
-                            id="photo-url"
-                            placeholder="https://example.com/photo.jpg"
-                            value={newPhotoUrl}
-                            onChange={(e) => setNewPhotoUrl(e.target.value)}
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <label
-                            htmlFor="photo-description"
-                            className="text-sm font-medium"
-                          >
-                            Description (optional)
-                          </label>
-                          <Textarea
-                            id="photo-description"
-                            placeholder="Brief description of the photo..."
-                            value={newPhotoDescription}
-                            onChange={(e) =>
-                              setNewPhotoDescription(e.target.value)
-                            }
-                            rows={3}
-                          />
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button
-                          variant="outline"
-                          onClick={() => setShowAddPhotoDialog(false)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button onClick={handleAddPhoto}>
-                          <Plus className="h-4 w-4 mr-2" /> Add Photo
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                </div>
+                <CardTitle className="flex items-center gap-2">
+                  <MapPin className="h-5 w-5" />
+                  Location
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                {photoUploadMessage && (
-                  <Alert className="mb-4">
-                    <AlertDescription>{photoUploadMessage}</AlertDescription>
-                  </Alert>
-                )}
-
-                {photos.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Image className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground">
-                      No photos uploaded yet
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Add photos to document this asset
+                {assetData.project?.location && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-900">
+                      {assetData.project.location}
                     </p>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {photos.map((photo) => (
-                      <div key={photo.id} className="relative group">
-                        <div className="aspect-square overflow-hidden rounded-lg border">
-                          <img
-                            src={photo.url}
-                            alt={photo.description || "Asset photo"}
-                            className="object-cover w-full h-full transition-transform group-hover:scale-105"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.src =
-                                "https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=400&q=80";
-                            }}
-                          />
-                        </div>
-                        <Button
-                          variant="destructive"
-                          size="icon"
-                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => handleRemovePhoto(photo.id)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                        {photo.description && (
-                          <div className="mt-2">
-                            <p className="text-sm font-medium">
-                              {photo.description}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(photo.uploadedAt).toLocaleDateString()}
-                            </p>
-                          </div>
+                )}
+
+                {assetData.line_position && (
+                  <div className="mt-4">
+                    <label className="text-sm font-medium text-gray-500">
+                      Line Path:
+                    </label>
+                    <div className="mt-1 text-xs text-gray-600 space-y-1">
+                      {Array.isArray(assetData.line_position) &&
+                        assetData.line_position.map(
+                          (point: any, index: number) => (
+                            <div key={index}>
+                              Point {index + 1}: X: {point.x?.toFixed(2)}, Y:{" "}
+                              {point.y?.toFixed(2)}, Z: {point.z?.toFixed(2)}
+                            </div>
+                          ),
                         )}
-                      </div>
-                    ))}
+                    </div>
                   </div>
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
+          </div>
+        </div>
 
+        {/* Tabs for detailed information */}
+        <Tabs defaultValue="maintenance" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
+            <TabsTrigger value="service">Service History</TabsTrigger>
+            <TabsTrigger value="repairs">Repairs</TabsTrigger>
+            <TabsTrigger value="files">Asset Files</TabsTrigger>
+          </TabsList>
+
+          {/* Maintenance Tab */}
           <TabsContent value="maintenance">
             <Card>
               <CardHeader>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <CardTitle>Maintenance Tasks</CardTitle>
-                    <CardDescription>
-                      Scheduled and completed maintenance tasks
-                    </CardDescription>
-                  </div>
-                  <Button>
-                    <Wrench className="h-4 w-4 mr-2" /> Add New Task
-                  </Button>
-                </div>
+                <CardTitle className="flex items-center gap-2">
+                  <Wrench className="h-5 w-5" />
+                  Maintenance Tasks
+                </CardTitle>
+                <CardDescription>
+                  Scheduled and completed maintenance activities
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <MaintenanceTaskList assetId={asset.id} />
+                {assetData.maintenance_tasks &&
+                assetData.maintenance_tasks.length > 0 ? (
+                  <div className="space-y-4">
+                    {assetData.maintenance_tasks.map((task) => (
+                      <div key={task.id} className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-medium">{task.title}</h4>
+                          <Badge
+                            className={
+                              task.completed
+                                ? "bg-green-100 text-green-800"
+                                : "bg-yellow-100 text-yellow-800"
+                            }
+                          >
+                            {task.completed ? "Completed" : "Pending"}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-2">
+                          {task.description}
+                        </p>
+                        <div className="text-xs text-gray-500">
+                          Due: {new Date(task.due_date).toLocaleDateString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-center py-8">
+                    No maintenance tasks found
+                  </p>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
+          {/* Service History Tab */}
           <TabsContent value="service">
-            {showServiceForm ? (
-              <Card>
-                <CardHeader>
-                  <div className="flex justify-between items-center">
-                    <CardTitle>New Service Log</CardTitle>
-                    <Button
-                      variant="ghost"
-                      onClick={() => setShowServiceForm(false)}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <ServiceLogForm
-                    assetId={asset.id}
-                    onSubmit={() => setShowServiceForm(false)}
-                  />
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <CardTitle>Service History</CardTitle>
-                      <CardDescription>
-                        Record of all service and maintenance activities
-                      </CardDescription>
-                    </div>
-                    <Button onClick={() => setShowServiceForm(true)}>
-                      <History className="h-4 w-4 mr-2" /> Add Service Log
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Service History
+                </CardTitle>
+                <CardDescription>
+                  Record of all service activities and maintenance logs
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {assetData.service_records &&
+                assetData.service_records.length > 0 ? (
                   <div className="space-y-4">
-                    {/* Sample service logs - would be populated from database */}
-                    {[1, 2, 3].map((log) => (
-                      <div key={log} className="border rounded-md p-4">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h3 className="font-medium">
-                              Quarterly Maintenance
-                            </h3>
-                            <div className="flex items-center text-sm text-muted-foreground mt-1">
-                              <Calendar className="h-3 w-3 mr-1" />
-                              <span className="mr-3">2023-{log * 3}-15</span>
-                              <Clock className="h-3 w-3 mr-1" />
-                              <span>10:30 AM</span>
-                            </div>
-                          </div>
-                          <Badge>Completed</Badge>
-                        </div>
-                        <p className="text-sm mt-2">
-                          Performed routine inspection and filter replacement.
-                          All systems operating normally.
-                        </p>
-                        <div className="flex items-center mt-3">
-                          <Image className="h-4 w-4 mr-1 text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">
-                            2 photos attached
+                    {assetData.service_records.map((record) => (
+                      <div key={record.id} className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-medium">{record.service_type}</h4>
+                          <span className="text-sm text-gray-500">
+                            {new Date(record.service_date).toLocaleDateString()}
                           </span>
                         </div>
+                        <p className="text-sm text-gray-600 mb-2">
+                          {record.description}
+                        </p>
+                        <div className="text-xs text-gray-500">
+                          Technician:{" "}
+                          {record.technician_name || "Not specified"}
+                        </div>
                       </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                ) : (
+                  <p className="text-gray-500 text-center py-8">
+                    No service records found
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Repairs Tab */}
+          <TabsContent value="repairs">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="h-5 w-5" />
+                  Repairs
+                </CardTitle>
+                <CardDescription>
+                  Repair history and current repair status
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {assetData.repairs && assetData.repairs.length > 0 ? (
+                  <div className="space-y-4">
+                    {assetData.repairs.map((repair) => (
+                      <div key={repair.id} className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-medium">{repair.repair_type}</h4>
+                          <Badge
+                            className={
+                              repair.status === "completed"
+                                ? "bg-green-100 text-green-800"
+                                : "bg-yellow-100 text-yellow-800"
+                            }
+                          >
+                            {repair.status}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-2">
+                          {repair.description}
+                        </p>
+                        <div className="text-xs text-gray-500">
+                          Started:{" "}
+                          {new Date(repair.start_date).toLocaleDateString()}
+                          {repair.completion_date && (
+                            <span>
+                              {" "}
+                              • Completed:{" "}
+                              {new Date(
+                                repair.completion_date,
+                              ).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-center py-8">
+                    No repairs found
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Asset Files Tab */}
+          <TabsContent value="files">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Asset Files
+                </CardTitle>
+                <CardDescription>
+                  Documents, manuals, and files related to this asset
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {assetData.asset_files && assetData.asset_files.length > 0 ? (
+                  <div className="space-y-4">
+                    {assetData.asset_files.map((file) => (
+                      <div
+                        key={file.id}
+                        className="border rounded-lg p-4 hover:bg-gray-50"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <h4 className="font-medium text-gray-900">
+                              {file.name}
+                            </h4>
+                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+                              <span>Type: {file.type}</span>
+                              <span>
+                                Size: {(file.size / 1024).toFixed(1)} KB
+                              </span>
+                              <span>
+                                Uploaded:{" "}
+                                {new Date(
+                                  file.uploaded_at,
+                                ).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(file.url, "_blank")}
+                          >
+                            View
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-center py-8">
+                    No files found for this asset
+                  </p>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
-
-        {/* Camera Dialog */}
-        <Dialog
-          open={showCameraDialog}
-          onOpenChange={(open) => {
-            if (!open) {
-              stopCamera();
-            }
-          }}
-        >
-          <DialogContent className="sm:max-w-[600px]">
-            <DialogHeader>
-              <DialogTitle>Capture Asset Photos</DialogTitle>
-              <DialogDescription>
-                Take photos of the asset (up to 5). Recommended: four corners
-                and nameplate. Photos captured: {capturedPhotos.length}/5
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="relative">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-64 object-cover rounded-md bg-black"
-                  onLoadedMetadata={() => {
-                    if (videoRef.current) {
-                      videoRef.current.play().catch(console.error);
-                    }
-                  }}
-                />
-                <canvas ref={canvasRef} className="hidden" />
-              </div>
-
-              {capturedPhotos.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium mb-2">Captured Photos:</p>
-                  <div className="grid grid-cols-5 gap-2">
-                    {capturedPhotos.map((photo, index) => (
-                      <div
-                        key={photo.id}
-                        className="relative aspect-square overflow-hidden rounded border"
-                      >
-                        <img
-                          src={photo.url}
-                          alt={`Captured ${index + 1}`}
-                          className="object-cover w-full h-full"
-                        />
-                        {photo.id === mainImageId && (
-                          <div className="absolute top-1 right-1">
-                            <Badge className="bg-green-100 text-green-800 text-xs">
-                              Main
-                            </Badge>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={stopCamera}>
-                {capturedPhotos.length > 0 ? "Done" : "Cancel"}
-              </Button>
-              <Button
-                onClick={capturePhoto}
-                disabled={capturedPhotos.length >= 5}
-              >
-                <Camera className="h-4 w-4 mr-2" />
-                Capture Photo ({capturedPhotos.length}/5)
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
   );
-};
-
-export default AssetDetail;
+}

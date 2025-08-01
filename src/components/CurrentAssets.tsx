@@ -22,6 +22,7 @@ import {
 import { supabase, hasSupabaseCredentials } from "@/lib/supabase";
 import { AssetWithProject, Project } from "@/types/supabase";
 import { useAuth } from "./AuthProvider";
+import { useNavigate } from "react-router-dom";
 
 interface CurrentAssetsProps {
   selectedProjectId?: string;
@@ -33,6 +34,7 @@ const CurrentAssets = ({
   onAssetSelect = () => {},
 }: CurrentAssetsProps) => {
   const { user, session } = useAuth();
+  const navigate = useNavigate();
   const [assets, setAssets] = useState<AssetWithProject[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,48 +57,35 @@ const CurrentAssets = ({
     }
 
     try {
+      console.log("Fetching projects for user:", user.id);
       const { data, error } = await supabase
         .from("projects")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("title");
+        .select(
+          "id, name, description, location, status, client_name, project_type, project_manager, created_at, updated_at",
+        )
+        .order("name");
 
       if (error) {
         console.error("Projects fetch error in CurrentAssets:", error);
-        // Use mock data as fallback
-        setProjects([
-          {
-            id: "1",
-            title: "Downtown Office Complex",
-            description:
-              "Modern office building with HVAC and security systems",
-            location: "Downtown District",
-            status: "active",
-            user_id: user.id,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ]);
+        setProjects([]);
         return;
       }
 
-      console.log("Projects fetched in CurrentAssets:", data?.length || 0);
-      setProjects(data || []);
+      // Transform projects to include title field for backward compatibility
+      const transformedProjects = (data || []).map((project) => ({
+        ...project,
+        title: project.name, // Map name to title for backward compatibility
+        user_id: user.id, // Add user_id for compatibility
+      }));
+
+      console.log(
+        "Projects fetched in CurrentAssets:",
+        transformedProjects.length,
+      );
+      setProjects(transformedProjects);
     } catch (err) {
       console.error("Error fetching projects in CurrentAssets:", err);
-      // Use mock data as fallback
-      setProjects([
-        {
-          id: "1",
-          title: "Downtown Office Complex",
-          description: "Modern office building with HVAC and security systems",
-          location: "Downtown District",
-          status: "active",
-          user_id: user.id,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      ]);
+      setProjects([]);
     }
   };
 
@@ -114,14 +103,13 @@ const CurrentAssets = ({
       console.log("Fetching assets from database...");
       console.log("Selected project ID:", selectedProjectId);
 
-      // Get assets with their annotations and projects (using correct relationship path)
-      let transformedAssets = [];
+      let assetsData = [];
 
       if (selectedProjectId && selectedProjectId !== "all") {
-        // First get annotations for the selected project
+        // Filter by project: get annotations for the project first, then get assets
         const { data: annotations, error: annotationsError } = await supabase
           .from("annotations")
-          .select("id, title, description, project_id, projects(*)")
+          .select("id")
           .eq("project_id", selectedProjectId);
 
         if (annotationsError) {
@@ -132,12 +120,12 @@ const CurrentAssets = ({
         }
 
         if (annotations && annotations.length > 0) {
-          const annotationIds = annotations.map((ann) => ann.id);
+          const annotationIds = annotations.map((a) => a.id);
 
-          // Then get assets that have these annotation_ids
-          const { data: assetsData, error: assetsError } = await supabase
+          const { data: assets, error: assetsError } = await supabase
             .from("assets")
             .select("*")
+            .eq("user_id", user.id)
             .in("annotation_id", annotationIds)
             .order("name");
 
@@ -146,50 +134,14 @@ const CurrentAssets = ({
             throw new Error(`Failed to fetch assets: ${assetsError.message}`);
           }
 
-          // Transform the data to match expected format
-          transformedAssets = (assetsData || []).map((asset) => {
-            const annotation = annotations.find(
-              (ann) => ann.id === asset.annotation_id,
-            );
-            return {
-              ...asset,
-              type: asset.asset_type_id ? "Custom Type" : "Standard",
-              model: "N/A",
-              serial_number: "N/A",
-              location: asset.position
-                ? JSON.stringify(asset.position)
-                : "Unknown",
-              status: asset.condition || "operational",
-              install_date: asset.year_installed
-                ? `${asset.year_installed}-01-01`
-                : null,
-              project_id: annotation?.project_id || null,
-              manufacturer: "N/A",
-              warranty_expiry: null,
-              purchase_date: null,
-              purchase_cost: null,
-              criticality: "medium",
-              project: annotation?.projects || null,
-              annotations: annotation,
-            };
-          });
+          assetsData = assets || [];
         }
       } else {
-        // Get all assets with their annotations and projects
-        const { data: assetsData, error: assetsError } = await supabase
+        // Get all assets for the user
+        const { data: assets, error: assetsError } = await supabase
           .from("assets")
-          .select(
-            `
-            *,
-            annotations(
-              id,
-              title,
-              description,
-              project_id,
-              projects(*)
-            )
-          `,
-          )
+          .select("*")
+          .eq("user_id", user.id)
           .order("name");
 
         if (assetsError) {
@@ -197,62 +149,90 @@ const CurrentAssets = ({
           throw new Error(`Failed to fetch assets: ${assetsError.message}`);
         }
 
-        // Transform the data to match expected format
-        transformedAssets = (assetsData || []).map((asset) => ({
-          ...asset,
-          type: asset.asset_type_id ? "Custom Type" : "Standard",
-          model: "N/A",
-          serial_number: "N/A",
-          location: asset.position ? JSON.stringify(asset.position) : "Unknown",
-          status: asset.condition || "operational",
-          install_date: asset.year_installed
-            ? `${asset.year_installed}-01-01`
-            : null,
-          project_id: asset.annotations?.project_id || null,
-          manufacturer: "N/A",
-          warranty_expiry: null,
-          purchase_date: null,
-          purchase_cost: null,
-          criticality: "medium",
-          project: asset.annotations?.projects || null,
-        }));
+        assetsData = assets || [];
       }
 
-      console.log("Successfully fetched assets:", transformedAssets.length);
+      // Get project information for assets that have annotation_id
+      const annotationIds = [
+        ...new Set(
+          assetsData.map((asset) => asset.annotation_id).filter(Boolean),
+        ),
+      ];
+      let projectsMap = {};
 
+      if (annotationIds.length > 0) {
+        const { data: annotations, error: annotationsError } = await supabase
+          .from("annotations")
+          .select(
+            `
+            id,
+            project_id,
+            projects (
+              id,
+              title,
+              description,
+              location,
+              status
+            )
+          `,
+          )
+          .in("id", annotationIds);
+
+        if (!annotationsError && annotations) {
+          // Create a map from annotation_id to project
+          annotations.forEach((annotation) => {
+            if (annotation.projects) {
+              projectsMap[annotation.id] = {
+                ...annotation.projects,
+                name: annotation.projects.title, // Map title to name for compatibility
+              };
+            }
+          });
+        }
+      }
+
+      // Transform the data to match expected format
+      const transformedAssets = assetsData.map((asset) => ({
+        ...asset,
+        type: asset.asset_type_id ? "Custom Type" : "Standard",
+        model: "N/A",
+        serial_number: "N/A",
+        location: projectsMap[asset.annotation_id]?.location || "Unknown",
+        status: asset.condition || "operational",
+        install_date: asset.year_installed
+          ? `${asset.year_installed}-01-01`
+          : null,
+        warranty_expiry: null,
+        purchase_date: null,
+        purchase_cost: null,
+        project:
+          asset.annotation_id && projectsMap[asset.annotation_id]
+            ? {
+                ...projectsMap[asset.annotation_id],
+                title: projectsMap[asset.annotation_id].name,
+              }
+            : null,
+      }));
+
+      console.log("Successfully fetched assets:", transformedAssets.length);
       setAssets(transformedAssets);
     } catch (err) {
       console.error("Error in fetchAssets:", err);
       const errorMessage =
         err instanceof Error ? err.message : "Failed to fetch assets";
       setError(errorMessage);
-
-      // Fallback to mock data on error
-      console.log("Falling back to mock asset data due to error");
-      setAssets([
-        {
-          id: "1",
-          name: "HVAC Unit A1 (Demo)",
-          type: "HVAC System",
-          model: "Model-2023",
-          serial_number: "HV001",
-          location: "Building A - Roof",
-          status: "operational",
-          install_date: "2023-01-15",
-          project_id: "1",
-          description: "Main HVAC unit for floors 1-5",
-          manufacturer: "HVAC Corp",
-          warranty_expiry: "2025-01-15",
-          purchase_date: "2023-01-01",
-          purchase_cost: 15000,
-          criticality: "high",
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      ]);
+      setAssets([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAssetClick = (asset: AssetWithProject) => {
+    console.log("Asset clicked:", asset.id);
+    // Navigate to asset detail page with the asset ID
+    navigate(`/asset/${asset.id}`);
+    // Also call the onAssetSelect callback if provided
+    onAssetSelect(asset);
   };
 
   const getStatusColor = (status: string) => {
@@ -449,7 +429,7 @@ const CurrentAssets = ({
               <div
                 key={asset.id}
                 className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent cursor-pointer"
-                onClick={() => onAssetSelect(asset)}
+                onClick={() => handleAssetClick(asset)}
               >
                 <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center">
@@ -458,7 +438,7 @@ const CurrentAssets = ({
                   <div>
                     <h3 className="font-medium">{asset.name}</h3>
                     <p className="text-sm text-muted-foreground">
-                      Asset Type ID: {asset.asset_type_id || "N/A"}
+                      {asset.project?.title || "No Project"} • {asset.location}
                     </p>
                   </div>
                 </div>

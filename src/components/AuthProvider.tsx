@@ -27,31 +27,39 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Skip auth if no Supabase credentials
-    if (!hasSupabaseCredentials) {
-      console.log("No Supabase credentials found, skipping auth");
-      setLoading(false);
-      return;
-    }
+    // Always try to initialize auth, even without credentials for testing
+    console.log(
+      "Initializing auth, hasSupabaseCredentials:",
+      hasSupabaseCredentials,
+    );
 
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        console.error("Error getting session:", error);
-      }
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    }).catch((error) => {
-      console.error("Failed to get session:", error);
-      setLoading(false);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data: { session }, error }) => {
+        if (error) {
+          console.error("Error getting session:", error);
+        } else {
+          console.log("Initial session:", session?.user?.email || "No session");
+        }
+        setSession(session);
+        setUser(session?.user ?? null);
+        setLoading(false);
+      })
+      .catch((error) => {
+        console.error("Failed to get session:", error);
+        setLoading(false);
+      });
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth state changed:", event, session?.user?.email);
+      console.log(
+        "Auth state changed:",
+        event,
+        session?.user?.email || "No session",
+      );
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
@@ -61,46 +69,90 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    console.log("Attempting sign in for:", email);
+
     if (!hasSupabaseCredentials) {
-      return { data: null, error: { message: "Supabase not configured" } };
+      console.warn("No Supabase credentials configured");
+      return {
+        data: null,
+        error: {
+          message:
+            "Supabase not configured. Please check your environment variables.",
+        },
+      };
     }
-    
+
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
+
+      if (error) {
+        console.error("Sign in error:", error);
+      } else {
+        console.log("Sign in successful:", data.user?.email);
+      }
+
       return { data, error };
     } catch (error) {
+      console.error("Sign in exception:", error);
       return { data: null, error };
     }
   };
 
   const signUp = async (email: string, password: string) => {
+    console.log("Attempting sign up for:", email);
+
     if (!hasSupabaseCredentials) {
-      return { data: null, error: { message: "Supabase not configured" } };
+      console.warn("No Supabase credentials configured");
+      return {
+        data: null,
+        error: {
+          message:
+            "Supabase not configured. Please check your environment variables.",
+        },
+      };
     }
-    
+
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
       });
+
+      if (error) {
+        console.error("Sign up error:", error);
+      } else {
+        console.log("Sign up successful:", data.user?.email);
+      }
+
       return { data, error };
     } catch (error) {
+      console.error("Sign up exception:", error);
       return { data: null, error };
     }
   };
 
   const signOut = async () => {
+    console.log("Attempting sign out");
+
     if (!hasSupabaseCredentials) {
+      console.warn("No Supabase credentials configured, clearing local state");
+      setUser(null);
+      setSession(null);
       return;
     }
-    
+
     try {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error("Sign out error:", error);
+      } else {
+        console.log("Sign out successful");
+      }
     } catch (error) {
-      console.error("Error signing out:", error);
+      console.error("Sign out exception:", error);
     }
   };
 
@@ -113,9 +165,5 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     signOut,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

@@ -8,11 +8,17 @@ export interface QRCode {
 
 export interface Project {
   id: string;
-  title: string;
+  name: string;
+  title?: string;
   description: string | null;
+  client_name: string | null;
+  project_type: string | null;
   location: string | null;
   status: string;
-  user_id: string;
+  start_date: string | null;
+  end_date: string | null;
+  project_manager: string | null;
+  user_id?: string;
   created_at: string;
   updated_at: string;
   asset_count?: number;
@@ -30,10 +36,15 @@ export interface Asset {
   position: any | null;
   annotation_id: string | null;
   measurement_id: string | null;
+  description: string | null;
+  manufacturer: string | null;
+  warranty_expiry: string | null;
+  purchase_date: string | null;
+  purchase_cost: number | null;
+  criticality: string | null;
   created_at: string;
   updated_at: string;
   condition: string | null;
-  description: string | null;
   replacement_description: string | null;
   cost_description: string | null;
   is_linear: boolean | null;

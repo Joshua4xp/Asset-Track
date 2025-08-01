@@ -205,55 +205,55 @@ const QRAssignment = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">QR Code Assignment</h1>
-          <p className="text-gray-600">Assign this QR code to an asset for tracking</p>
+        <div className="mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">QR Code Assignment</h1>
+          <p className="text-sm sm:text-base text-gray-600">Assign this QR code to an asset for tracking</p>
         </div>
 
         {error && (
-          <Alert className="mb-6 border-red-200 bg-red-50">
+          <Alert className="mb-4 sm:mb-6 border-red-200 bg-red-50">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="text-red-800">{error}</AlertDescription>
+            <AlertDescription className="text-red-800 text-sm">{error}</AlertDescription>
           </Alert>
         )}
 
         {success && (
-          <Alert className="mb-6 border-green-200 bg-green-50">
+          <Alert className="mb-4 sm:mb-6 border-green-200 bg-green-50">
             <CheckCircle className="h-4 w-4" />
-            <AlertDescription className="text-green-800">{success}</AlertDescription>
+            <AlertDescription className="text-green-800 text-sm">{success}</AlertDescription>
           </Alert>
         )}
 
         {/* QR Code Info */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <QrCode className="h-5 w-5" />
-              QR Code: {qrCode.id}
+        <Card className="mb-6 sm:mb-8">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+              <QrCode className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span className="truncate">QR Code: {qrCode.id}</span>
             </CardTitle>
-            <CardDescription>
-              Status: <Badge variant="secondary" className="bg-green-100 text-green-800">
+            <CardDescription className="text-sm">
+              Status: <Badge variant="secondary" className="bg-green-100 text-green-800 text-xs">
                 {qrCode.status}
               </Badge>
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
               {qrImage && (
-                <div className="flex-shrink-0">
+                <div className="flex-shrink-0 mx-auto sm:mx-0">
                   <img 
                     src={qrImage} 
                     alt={`QR Code ${qrCode.id}`}
-                    className="w-32 h-32 border rounded-lg"
+                    className="w-24 h-24 sm:w-32 sm:h-32 border rounded-lg"
                   />
                 </div>
               )}
-              <div className="flex-1">
-                <div className="space-y-2 text-sm text-gray-600">
-                  <div><strong>QR ID:</strong> {qrCode.id}</div>
-                  <div><strong>URL:</strong> {window.location.origin}/qr/{qrCode.id}</div>
+              <div className="flex-1 w-full">
+                <div className="space-y-2 text-xs sm:text-sm text-gray-600">
+                  <div className="break-all"><strong>QR ID:</strong> {qrCode.id}</div>
+                  <div className="break-all"><strong>URL:</strong> {window.location.origin}/qr/{qrCode.id}</div>
                   <div><strong>Created:</strong> {new Date(qrCode.created_at).toLocaleString()}</div>
                 </div>
               </div>
@@ -261,39 +261,46 @@ const QRAssignment = () => {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
           {/* Assign to Existing Asset */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Package className="h-5 w-5" />
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Package className="h-4 w-4 sm:h-5 sm:w-5" />
                 Assign to Existing Asset
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-sm">
                 Select an existing asset to assign this QR code to
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label htmlFor="asset-select">Select Asset</Label>
-                <Select value={selectedAssetId} onValueChange={setSelectedAssetId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose an asset..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {assets.map((asset) => (
-                      <SelectItem key={asset.id} value={asset.id}>
-                        {asset.name} {asset.location && `(${asset.location})`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="asset-select" className="text-sm font-medium">Select Asset</Label>
+                <div className="mt-1">
+                  <Select value={selectedAssetId} onValueChange={setSelectedAssetId}>
+                    <SelectTrigger className="w-full h-11 text-base">
+                      <SelectValue placeholder="Choose an asset..." />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[200px] overflow-y-auto">
+                      {assets.map((asset) => (
+                        <SelectItem key={asset.id} value={asset.id} className="text-base py-3">
+                          <div className="flex flex-col items-start">
+                            <span className="font-medium">{asset.name}</span>
+                            {asset.location && (
+                              <span className="text-xs text-gray-500">({asset.location})</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               
               <Button 
                 onClick={handleAssignToExisting}
                 disabled={!selectedAssetId || assigning}
-                className="w-full"
+                className="w-full h-11 text-base"
               >
                 {assigning ? 'Assigning...' : 'Assign to Asset'}
               </Button>
@@ -302,69 +309,74 @@ const QRAssignment = () => {
 
           {/* Create New Asset */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Plus className="h-5 w-5" />
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
                 Create New Asset
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-sm">
                 Create a new asset and assign this QR code to it
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label htmlFor="asset-name">Asset Name *</Label>
+                <Label htmlFor="asset-name" className="text-sm font-medium">Asset Name *</Label>
                 <Input
                   id="asset-name"
                   value={newAsset.name}
                   onChange={(e) => setNewAsset(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="Enter asset name"
+                  className="mt-1 h-11 text-base"
                 />
               </div>
               
               <div>
-                <Label htmlFor="asset-description">Description</Label>
+                <Label htmlFor="asset-description" className="text-sm font-medium">Description</Label>
                 <Input
                   id="asset-description"
                   value={newAsset.description}
                   onChange={(e) => setNewAsset(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="Enter description"
+                  className="mt-1 h-11 text-base"
                 />
               </div>
               
               <div>
-                <Label htmlFor="asset-location">Location</Label>
+                <Label htmlFor="asset-location" className="text-sm font-medium">Location</Label>
                 <Input
                   id="asset-location"
                   value={newAsset.location}
                   onChange={(e) => setNewAsset(prev => ({ ...prev, location: e.target.value }))}
                   placeholder="Enter location"
+                  className="mt-1 h-11 text-base"
                 />
               </div>
               
               <div>
-                <Label htmlFor="project-select">Project *</Label>
-                <Select 
-                  value={newAsset.project_id} 
-                  onValueChange={(value) => setNewAsset(prev => ({ ...prev, project_id: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select project..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="project-select" className="text-sm font-medium">Project *</Label>
+                <div className="mt-1">
+                  <Select 
+                    value={newAsset.project_id} 
+                    onValueChange={(value) => setNewAsset(prev => ({ ...prev, project_id: value }))}
+                  >
+                    <SelectTrigger className="w-full h-11 text-base">
+                      <SelectValue placeholder="Select project..." />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[200px] overflow-y-auto">
+                      {projects.map((project) => (
+                        <SelectItem key={project.id} value={project.id} className="text-base py-3">
+                          {project.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               
               <Button 
                 onClick={handleCreateAndAssign}
                 disabled={!newAsset.name || !newAsset.project_id || assigning}
-                className="w-full"
+                className="w-full h-11 text-base"
               >
                 {assigning ? 'Creating...' : 'Create Asset & Assign'}
               </Button>

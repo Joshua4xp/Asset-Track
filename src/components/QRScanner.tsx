@@ -1,5 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Camera, QrCodeIcon, X, CheckCircle, AlertCircle, ArrowLeft } from "lucide-react";
+import {
+  Camera,
+  QrCodeIcon,
+  X,
+  CheckCircle,
+  AlertCircle,
+  ArrowLeft,
+} from "lucide-react";
 import { Button } from "./ui/button";
 import {
   Card,
@@ -10,8 +17,8 @@ import {
 } from "./ui/card";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { useNavigate } from "react-router-dom";
-import * as QRCodeAPI from '../lib/qrCodeAPI';
-import QrScanner from 'qr-scanner';
+import * as QRCodeAPI from "../lib/qrCodeAPI";
+import QrScanner from "qr-scanner";
 
 interface QRScannerProps {
   onScanComplete?: (qrData: string) => void;
@@ -46,7 +53,7 @@ const QRScanner = ({
 
   const extractQRId = (qrData: string): string | null => {
     // Handle different QR code formats
-    if (qrData.includes('/qr/')) {
+    if (qrData.includes("/qr/")) {
       // Extract ID from URL like "https://domain.com/qr/B4K8P2"
       const match = qrData.match(/\/qr\/([A-Z0-9]+)/);
       return match ? match[1] : null;
@@ -60,7 +67,7 @@ const QRScanner = ({
   const startCamera = async () => {
     setCameraLoading(true);
     setError(null);
-    
+
     try {
       if (videoRef.current) {
         // Initialize QR Scanner
@@ -68,49 +75,51 @@ const QRScanner = ({
           videoRef.current,
           async (result) => {
             if (scanning) return; // Prevent multiple scans
-            
+
             setScanning(true);
             const qrId = extractQRId(result.data);
-            
+
             if (qrId) {
               // Check if it's registered in our database
               try {
                 const qrRecord = await QRCodeAPI.getQRCodeById(qrId);
-                
+
                 if (qrRecord) {
                   // QR code exists, check if it's assigned
-                  const isAssigned = qrRecord.status === 'assigned';
+                  const isAssigned = qrRecord.status === "assigned";
                   setScanResult({ data: qrId, isRegistered: isAssigned });
                 } else {
                   // QR code doesn't exist in database
                   setScanResult({ data: qrId, isRegistered: false });
                 }
-                
+
                 onScanComplete(qrId);
-                
+
                 // Stop scanning after successful scan
                 if (qrScannerRef.current) {
                   qrScannerRef.current.stop();
                 }
-                
+
                 // Reset scanning state after processing
                 setScanning(false);
               } catch (err) {
-                console.error('Error checking QR code:', err);
+                console.error("Error checking QR code:", err);
                 setScanResult({ data: qrId, isRegistered: false });
                 onScanComplete(qrId);
                 setScanning(false);
               }
             } else {
-              setError("This QR code is not from our system. Please scan a valid asset QR code.");
+              setError(
+                "This QR code is not from our system. Please scan a valid asset QR code.",
+              );
               setScanning(false);
             }
           },
           {
-            preferredCamera: 'environment',
+            preferredCamera: "environment",
             highlightScanRegion: true,
             highlightCodeOutline: true,
-          }
+          },
         );
 
         await qrScannerRef.current.start();
@@ -120,13 +129,15 @@ const QRScanner = ({
     } catch (err) {
       console.error("Camera access error:", err);
       setCameraLoading(false);
-      
+
       if (err instanceof Error) {
-        if (err.name === 'NotAllowedError') {
-          setError("Camera access denied. Please allow camera permissions and refresh the page.");
-        } else if (err.name === 'NotFoundError') {
+        if (err.name === "NotAllowedError") {
+          setError(
+            "Camera access denied. Please allow camera permissions and refresh the page.",
+          );
+        } else if (err.name === "NotFoundError") {
           setError("No camera found on this device.");
-        } else if (err.name === 'NotSupportedError') {
+        } else if (err.name === "NotSupportedError") {
           setError("Camera not supported on this device.");
         } else {
           setError("Failed to access camera. Please try again.");
@@ -153,19 +164,23 @@ const QRScanner = ({
         // We already know it's registered, get the data and navigate
         try {
           const qrData = await QRCodeAPI.getQRCodeById(scanResult.data);
-          
-          if (qrData && qrData.status === 'assigned' && qrData.assigned_asset_id) {
+
+          if (
+            qrData &&
+            qrData.status === "assigned" &&
+            qrData.assigned_asset_id
+          ) {
             navigate(`/asset/${qrData.assigned_asset_id}`);
           } else {
             navigate(`/qr/${qrData.id}`);
           }
         } catch (err) {
-          console.error('Error getting QR code details:', err);
-          setError('Failed to load asset details. Please try again.');
+          console.error("Error getting QR code details:", err);
+          setError("Failed to load asset details. Please try again.");
         }
       } else {
-        // Not registered, navigate to registration
-        navigate(`/qr/register/${scanResult.data}`);
+        // Not registered, navigate to assignment page
+        navigate(`/qr/${scanResult.data}`);
       }
     }
   };
@@ -179,13 +194,13 @@ const QRScanner = ({
     setScanning(false); // Reset scanning state
     setError(null);
     setScanResult(null);
-    
+
     // Resume scanning
     try {
       await qrScannerRef.current.start();
     } catch (err) {
-      console.error('Error starting scanner:', err);
-      setError('Failed to start scanning. Please try again.');
+      console.error("Error starting scanner:", err);
+      setError("Failed to start scanning. Please try again.");
     }
   };
 
@@ -193,11 +208,11 @@ const QRScanner = ({
     setScanResult(null);
     setError(null);
     setScanning(false);
-    
+
     // Restart the scanner
     if (qrScannerRef.current && cameraActive) {
-      qrScannerRef.current.start().catch(err => {
-        console.error('Error restarting scanner:', err);
+      qrScannerRef.current.start().catch((err) => {
+        console.error("Error restarting scanner:", err);
       });
     }
   };
@@ -238,7 +253,7 @@ const QRScanner = ({
               muted
               autoPlay
             />
-            
+
             {/* Loading overlay */}
             {cameraLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
@@ -291,9 +306,9 @@ const QRScanner = ({
                 {error}
                 {error.includes("denied") && (
                   <div className="mt-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => window.location.reload()}
                     >
                       Refresh Page
@@ -306,22 +321,25 @@ const QRScanner = ({
 
           {/* Scan Result Message */}
           {scanResult && (
-            <Alert variant={scanResult.isRegistered ? "default" : "destructive"}>
+            <Alert
+              variant={scanResult.isRegistered ? "default" : "destructive"}
+            >
               {scanResult.isRegistered ? (
                 <CheckCircle className="h-4 w-4" />
               ) : (
                 <AlertCircle className="h-4 w-4" />
               )}
               <AlertTitle>
-                {scanResult.isRegistered ? "Asset Found" : "Unassigned Asset Detected"}
+                {scanResult.isRegistered
+                  ? "Asset Found"
+                  : "Unassigned Asset Detected"}
               </AlertTitle>
               <AlertDescription>
                 QR Code: <strong>{scanResult.data}</strong>
                 <br />
-                {scanResult.isRegistered 
-                  ? "This QR code is assigned to an asset in the system." 
-                  : "This QR code exists but is not assigned to any asset yet."
-                }
+                {scanResult.isRegistered
+                  ? "This QR code is assigned to an asset in the system."
+                  : "This QR code exists but is not assigned to any asset yet."}
               </AlertDescription>
             </Alert>
           )}
@@ -337,16 +355,17 @@ const QRScanner = ({
                 >
                   Scan Again
                 </Button>
-                <Button
-                  className="flex-1"
-                  onClick={handleProceed}
-                >
+                <Button className="flex-1" onClick={handleProceed}>
                   {scanResult.isRegistered ? "View Asset" : "Register Asset"}
                 </Button>
               </>
             ) : (
               <>
-                <Button variant="outline" onClick={handleClose} className="flex-1">
+                <Button
+                  variant="outline"
+                  onClick={handleClose}
+                  className="flex-1"
+                >
                   Cancel
                 </Button>
                 <Button
@@ -354,7 +373,11 @@ const QRScanner = ({
                   disabled={scanning || !cameraActive || cameraLoading}
                   className="flex-1"
                 >
-                  {scanning ? "Scanning..." : cameraLoading ? "Loading..." : "Start Scan"}
+                  {scanning
+                    ? "Scanning..."
+                    : cameraLoading
+                      ? "Loading..."
+                      : "Start Scan"}
                 </Button>
               </>
             )}

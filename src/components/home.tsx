@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -26,7 +26,7 @@ import {
   LogOut,
   User,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import ProjectSelector from "./ProjectSelector";
 import CurrentAssets from "./CurrentAssets";
 import ProjectDropdown from "./ProjectDropdown";
@@ -36,8 +36,10 @@ import { useAuth } from "./AuthProvider";
 
 const Home = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, signOut } = useAuth();
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [activeTab, setActiveTab] = useState("overview");
 
   const pendingTasks = [
     {
@@ -68,6 +70,23 @@ const Home = () => {
     await signOut();
   };
 
+  // Handle navigation state from AssetDetail back button
+  useEffect(() => {
+    if (location.state) {
+      const { selectedProjectId, activeTab: stateActiveTab } =
+        location.state as any;
+      if (stateActiveTab) {
+        setActiveTab(stateActiveTab);
+      }
+      if (selectedProjectId) {
+        // Find and set the project based on the ID
+        // This will be handled when projects are loaded
+        const projectToSelect = { id: selectedProjectId } as Project;
+        setSelectedProject(projectToSelect);
+      }
+    }
+  }, [location.state]);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header with user info and logout */}
@@ -96,7 +115,7 @@ const Home = () => {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <Tabs defaultValue="overview" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="assets">Current Assets</TabsTrigger>
@@ -108,7 +127,9 @@ const Home = () => {
             <div className="bg-card p-4 rounded-lg border">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold mb-1">Project Selection</h2>
+                  <h2 className="text-lg font-semibold mb-1">
+                    Project Selection
+                  </h2>
                   <p className="text-sm text-muted-foreground">
                     Select a project to view its assets and maintenance data
                   </p>
